@@ -3,7 +3,10 @@ COMPOSE ?= docker compose
 K6 = $(COMPOSE) --profile loadtest run --rm
 PROMTOOL = docker run --rm --entrypoint promtool -v $(CURDIR)/observability/prometheus:/p prom/prometheus:v2.55.1
 
-.PHONY: help up down logs test smoke load spike chaos-redis chaos-db chaos-worker check-rules test-rules k8s-render k8s-up k8s-down
+.PHONY: results-dir help up down logs test smoke load spike chaos-redis chaos-db chaos-worker check-rules test-rules k8s-render k8s-up k8s-down
+
+results-dir:
+	@mkdir -p results && chmod 777 results  # k6 container runs as a non-root user
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -24,22 +27,22 @@ logs: ## Tail app logs
 test: test-rules ## Unit tests (vote service + alert rules)
 	cd vote && python -m pytest -q tests
 
-smoke: ## k6 smoke test (CI gate, 30 s)
+smoke: results-dir ## k6 smoke test (CI gate, 30 s)
 	$(K6) -e PROFILE=smoke k6 run /scripts/vote.js
 
-load: ## k6 load test: ramp to 50 VUs (~4 min)
+load: results-dir ## k6 load test: ramp to 50 VUs (~4 min)
 	$(K6) -e PROFILE=load k6 run /scripts/vote.js
 
-spike: ## k6 spike test: 10 -> 200 VUs
+spike: results-dir ## k6 spike test: 10 -> 200 VUs
 	$(K6) -e PROFILE=spike k6 run /scripts/vote.js
 
-chaos-redis: ## Stop Redis for 20 s under load, measure impact
+chaos-redis: results-dir ## Stop Redis for 20 s under load, measure impact
 	COMPOSE="$(COMPOSE)" chaos/experiment.sh redis 20 5
 
-chaos-db: ## Stop Postgres for 20 s under 50 votes/s, measure data loss
+chaos-db: results-dir ## Stop Postgres for 20 s under 50 votes/s, measure data loss
 	COMPOSE="$(COMPOSE)" chaos/experiment.sh db 20 50
 
-chaos-worker: ## Stop the worker for 20 s, watch backlog + freshness alert
+chaos-worker: results-dir ## Stop the worker for 20 s, watch backlog + freshness alert
 	COMPOSE="$(COMPOSE)" chaos/experiment.sh worker 20 5
 
 check-rules: ## Validate Prometheus rules and check the k8s copy is in sync

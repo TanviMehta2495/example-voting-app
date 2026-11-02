@@ -16,6 +16,8 @@ DURATION=$((WARMUP + OUTAGE + 30))
 COMPOSE="${COMPOSE:-docker compose}"
 OUT="results/chaos-${TARGET}.md"
 
+mkdir -p results && chmod 777 results   # k6 runs as a non-root user
+
 psql() { $COMPOSE exec -T db psql -U postgres -tAc "$1"; }
 
 echo ">> resetting state"
@@ -50,6 +52,11 @@ done
 sleep 3
 
 SUMMARY="results/k6-chaos-${TARGET}-summary.json"
+if [ ! -s "$SUMMARY" ]; then
+  echo "ERROR: k6 produced no summary ($SUMMARY). k6 log:" >&2
+  cat "results/k6-chaos-${TARGET}.log" >&2
+  exit 1
+fi
 read -r ACCEPTED REJECTED P99 <<<"$(python3 - "$SUMMARY" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
